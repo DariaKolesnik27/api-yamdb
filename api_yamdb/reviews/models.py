@@ -1,7 +1,6 @@
 """Модели для приложения reviews."""
 from django.db import models
 
-# from users.models import User
 from reviews.validators import validate_year
 
 
