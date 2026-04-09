@@ -1,7 +1,11 @@
-import datetime
+from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 
 def validate_year(value):
-    if value > datetime.date.today().year:
-        raise ValidationError('Год выпуска не может быть больше текущего!')
+    current_year = timezone.now().year
+    if value > current_year:
+        raise ValidationError(
+            f'Год выпуска ({value}) не может '
+            f'быть больше текущего года ({current_year}).'
+        )
