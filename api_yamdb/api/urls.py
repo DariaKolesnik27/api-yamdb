@@ -2,7 +2,14 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    CategoryViewSet, CommentViewSet, CreateUser, GenreViewSet, ReviewViewSet, TitleViewSet, TokenObtainPairView, YamdbUserViewSet
+    CategoryViewSet,
+    CommentViewSet,
+    CreateUser,
+    GenreViewSet,
+    ReviewViewSet,
+    TitleViewSet,
+    TokenObtainPairView,
+    YamdbUserViewSet
 )
 
 router_v1 = DefaultRouter()
