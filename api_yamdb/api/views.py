@@ -258,7 +258,10 @@ class CreateUser(generics.CreateAPIView):
 
 
 class TokenObtainPairView(generics.CreateAPIView):
-    """В ответ на запрос отправляет token (JWT-токен)."""
+    """
+    Получает username и confirmation_code, проверяет валидность данных.
+    В ответ на запрос отправляет token (JWT-токен).
+    """
 
     serializer_class = TokenObtainSerializer
     permission_classes = [AllowAny]
