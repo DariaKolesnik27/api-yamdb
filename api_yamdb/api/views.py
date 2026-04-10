@@ -1,3 +1,4 @@
+"""Представления для API приложения reviews"""
 import uuid
 
 from django.core.mail import send_mail
@@ -18,8 +19,6 @@ from api.serializers import (
     CategorySerializer,
     CommentSerializer,
     GenreSerializer,
-    # TitleWriteSerializer,
-    # TitleReadSerializer,
     TitleSerializer,
     ReviewSerializer,
     TokenObtainSerializer,
@@ -71,11 +70,6 @@ class TitleViewSet(viewsets.ModelViewSet):
     filter_backends = (DjangoFilterBackend,)
     permission_classes = (IsAdminOrReadOnly, )
     http_method_names = ('get', 'post', 'patch', 'delete', 'head', 'options')
-
-    # def get_serializer_class(self):
-    #     if self.action in ('list', 'retrieve'):
-    #         return TitleReadSerializer
-    #     return TitleWriteSerializer
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
