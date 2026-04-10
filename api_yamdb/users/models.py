@@ -40,13 +40,21 @@ class YamdbUser(AbstractUser):
     )
     first_name = models.CharField(
         max_length=MAX_NAMES_LENGTH,
+        blank=True,
+        null=True,
         verbose_name='Имя'
     )
     last_name = models.CharField(
         max_length=MAX_NAMES_LENGTH,
+        blank=True,
+        null=True,
         verbose_name='Фамилия'
     )
-    bio = models.TextField(verbose_name='Биография пользователя')
+    bio = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Биография пользователя'
+    )
     role = models.CharField(max_length=20, choices=ROLES, default=ROLE_USER)
     confirmation_code = models.CharField(
         max_length=CODE_LENGTH,

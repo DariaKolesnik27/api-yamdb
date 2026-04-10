@@ -4,7 +4,9 @@ from django.core.mail import send_mail
 from django.forms import ValidationError
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import exceptions, filters, generics, mixins, pagination, status, viewsets
+from rest_framework import (
+    filters, generics, mixins, pagination, status, viewsets
+)
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
@@ -23,7 +25,9 @@ from api.serializers import (
     TokenObtainSerializer,
     YamdbUserSerializer
 )
-from api.permissions import IsAdminOrReadOnly, IsAuthorModeratorAdmin, IsOwnerOrAdmin
+from api.permissions import (
+    IsAdminOrReadOnly, IsAuthorModeratorAdmin, IsOwnerOrAdmin
+)
 
 
 class CategoryViewSet(
@@ -128,29 +132,27 @@ class YamdbUserViewSet(viewsets.ModelViewSet):
     def get_object(self):
         username = self.kwargs['username']
         if username == 'me':
-            if not self.request.user.is_authenticated:
-                raise exceptions.NotAuthenticated()
             return self.request.user
 
-        obj = get_object_or_404(
+        user = get_object_or_404(
             self.get_queryset(),
             username=username
         )
-        self.check_object_permissions(self.request, obj)
-        return obj
+        self.check_object_permissions(self.request, user)
+        return user
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         username = self.kwargs['username']
         if username == 'me':
-            return Response(status=405)
+            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
         self.perform_destroy(instance)
-        return Response(status=204)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def update(self, request, *args, **kwargs):
         if request.method == 'PUT':
-            return Response(status=405)
-        if (
+            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+        elif (
             self.kwargs['username'] == 'me'
             and 'role' in request.data
             and not request.user.is_staff
@@ -160,29 +162,6 @@ class YamdbUserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().update(request, *args, **kwargs)
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        email = serializer.validated_data.get('email')
-        username = serializer.validated_data.get('username')
-        if email and YamdbUser.objects.filter(email=email).exists():
-            return Response(
-                {'email': ['Пользователь с таким email уже существует.']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        if username and YamdbUser.objects.filter(username=username).exists():
-            return Response(
-                'Пользователь с таким username уже существует.',
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        self.perform_create(serializer)
-        return Response(
-            serializer.data,
-            status=status.HTTP_201_CREATED,
-        )
 
 
 class CreateUser(generics.CreateAPIView):
@@ -200,6 +179,10 @@ class CreateUser(generics.CreateAPIView):
         return str(uuid.uuid4()).replace('-', '')[:12]
 
     def create(self, request, *args, **kwargs):
+        """
+        Создает пользователя, если его нет в базе данных.
+        Отправляет письмо с кодом подтверждения.
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         username = serializer.validated_data['username']
@@ -208,29 +191,12 @@ class CreateUser(generics.CreateAPIView):
         try:
             code = self.generate_confirmation_code()
             user_by_email = YamdbUser.objects.filter(email=email).first()
-            user_by_username = (
-                YamdbUser.objects.filter(username=username).first()
-            )
-
-            if user_by_email and not user_by_username:
-                return Response(
-                    {'error': 'Пользователь с таким email уже существует'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            elif user_by_username and not user_by_email:
-                return Response(
-                    {'error': 'Пользователь с таким username уже существует'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            elif user_by_email and user_by_username:
-                if user_by_email == user_by_username:
-                    user_by_email.confirmation_code = code
-                    user_by_email.save()
-                else:
-                    return Response(
-                        'Username и email принадлежат разным пользователям',
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            if (
+                user_by_email
+                and YamdbUser.objects.filter(username=username).exists()
+            ):
+                user_by_email.confirmation_code = code
+                user_by_email.save()
             else:
                 YamdbUser.objects.create(
                     email=email,
@@ -267,34 +233,18 @@ class TokenObtainPairView(generics.CreateAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        username = request.data.get('username')
-        confirmation_code = request.data.get('confirmation_code')
-
-        if not username or not confirmation_code:
-            return Response(
-                'username и confirmation_code обязательны',
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        username = serializer.validated_data['username']
 
         try:
             user = YamdbUser.objects.get(username=username)
-            if user.confirmation_code != confirmation_code:
-                return Response(
-                    'Неверный код подтверждения',
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
             access_token = AccessToken.for_user(user)
 
             return Response({
                 'access': str(access_token),
             })
 
-        except YamdbUser.DoesNotExist:
-            return Response(
-                {'error': 'Пользователь не найден'},
-                status=status.HTTP_404_NOT_FOUND
-            )
         except Exception:
             return Response(
                 {'error': 'Ошибка при получении токена'},

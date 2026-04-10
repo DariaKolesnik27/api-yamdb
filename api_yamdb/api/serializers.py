@@ -2,11 +2,25 @@ import re
 
 from django.db.models import Avg
 
-from rest_framework import serializers, status
+from django.http import Http404
+from rest_framework import serializers
 # from rest_framework.validators import UniqueTogetherValidator
 
 from reviews.models import Category, Comment, Genre, Review, Title
 from users.models import YamdbUser
+
+
+def validate_username_and_email(username, email):
+    user_by_email = YamdbUser.objects.filter(email=email).first()
+    user_by_username = YamdbUser.objects.filter(username=username).first()
+    if user_by_email and not user_by_username:
+        return False
+    elif user_by_username and not user_by_email:
+        return False
+    elif user_by_email and user_by_username:
+        if user_by_email != user_by_username:
+            return False
+    return True
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -134,7 +148,7 @@ class CommentSerializer(serializers.ModelSerializer):
 class YamdbUserSerializer(serializers.ModelSerializer):
     """Сериализатор для работы с пользователями."""
 
-    email = serializers.EmailField(required=True)
+    email = serializers.EmailField(max_length=254, required=True)
     username = serializers.CharField(max_length=150, required=True)
     role = serializers.ChoiceField(
         choices=['user', 'moderator', 'admin'],
@@ -142,26 +156,24 @@ class YamdbUserSerializer(serializers.ModelSerializer):
         default='user'
     )
 
+    def validate(self, data):
+        username = data.get('username')
+        email = data.get('email')
+        if not validate_username_and_email(username, email):
+            raise serializers.ValidationError(
+                'Имя пользователя или пароль уже используются.'
+            )
+        return data
+
     def validate_username(self, value):
         if not re.match(r'^[\w.@+-]+$', value):
             raise serializers.ValidationError(
                 'Username должен содержать только буквы, '
                 'цифры и символы @/./+/-/_.'
             )
-        if len(value) > 150:
-            raise serializers.ValidationError(
-                'Длина username не должна превышать 150 символов.'
-            )
         if value.lower() == 'me':
             raise serializers.ValidationError(
                 'Использовать имя "me" в качестве username запрещено.'
-            )
-        return value
-
-    def validate_email(self, value):
-        if len(value) > 254:
-            raise serializers.ValidationError(
-                'Длина email не должна превышать 254 символа.'
             )
         return value
 
@@ -191,15 +203,17 @@ class TokenObtainSerializer(serializers.Serializer):
     confirmation_code = serializers.CharField()
 
     def validate(self, data):
-        username = data['username']
-        confirmation_code = data['confirmation_code']
+        username = data.get('username')
+        confirmation_code = data.get('confirmation_code')
+        if not username or not confirmation_code:
+            raise serializers.ValidationError(
+                'Поля username и confirmation_code обязательны'
+            )
+
         try:
             user = YamdbUser.objects.get(username=username)
         except YamdbUser.DoesNotExist:
-            raise serializers.ValidationError(
-                {'username': 'Пользователь не найден.'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            raise Http404('Пользователь не найден')
 
         if user.confirmation_code != confirmation_code:
             raise serializers.ValidationError(
