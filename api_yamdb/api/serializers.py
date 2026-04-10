@@ -1,3 +1,4 @@
+"""Сериализаторы для моделей приложения review."""
 from django.db.models import Avg
 
 from rest_framework import serializers
