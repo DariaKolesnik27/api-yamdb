@@ -1,10 +1,15 @@
 from django.urls import include, path
-from rest_framework_simplejwt.views import TokenObtainPairView
-
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    CategoryViewSet, CommentViewSet, GenreViewSet, ReviewViewSet, TitleViewSet
+    CategoryViewSet,
+    CommentViewSet,
+    CreateUser,
+    GenreViewSet,
+    ReviewViewSet,
+    TitleViewSet,
+    TokenObtainPairView,
+    YamdbUserViewSet
 )
 
 router_v1 = DefaultRouter()
@@ -22,8 +27,14 @@ router_v1.register(
     CommentViewSet,
     basename='comments'
 )
+router_v1.register('users', YamdbUserViewSet, basename='user')
 
 urlpatterns = [
-    path('api/jwt/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('v1/', include(router_v1.urls)),
+    path('v1/auth/signup/', CreateUser.as_view(), name='create_user'),
+    path(
+        'v1/auth/token/',
+        TokenObtainPairView.as_view(),
+        name='token_obtain_pair'
+    ),
 ]
