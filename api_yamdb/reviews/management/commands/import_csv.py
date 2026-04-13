@@ -2,8 +2,8 @@ import csv
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
 
-from users.models import YamdbUser
 from reviews.models import (
     Category,
     Genre,
@@ -11,6 +11,9 @@ from reviews.models import (
     Review,
     Comment,
 )
+
+
+User = get_user_model()
 
 
 class Command(BaseCommand):
@@ -22,7 +25,7 @@ class Command(BaseCommand):
         with open(path, encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                YamdbUser.objects.get_or_create(
+                User.objects.get_or_create(
                     id=row['id'],
                     username=row['username'],
                     email=row['email'],
@@ -84,7 +87,7 @@ class Command(BaseCommand):
                     id=row['id'],
                     title=Title.objects.get(id=row['title_id']),
                     text=row['text'],
-                    author=YamdbUser.objects.get(id=row['author']),
+                    author=User.objects.get(id=row['author']),
                     score=row['score'],
                     pub_date=row['pub_date']
                 )
@@ -98,7 +101,7 @@ class Command(BaseCommand):
                     id=row['id'],
                     review=Review.objects.get(id=row['review_id']),
                     text=row['text'],
-                    author=YamdbUser.objects.get(id=row['author']),
+                    author=User.objects.get(id=row['author']),
                     pub_date=row['pub_date']
                 )
         self.stdout.write('Comments импортированы')
