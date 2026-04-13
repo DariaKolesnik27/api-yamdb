@@ -2,9 +2,11 @@
 import uuid
 
 from django.core.mail import send_mail
+from django.db.models import Avg
 from django.forms import ValidationError
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+from django.contrib.auth import get_user_model
 from rest_framework import (
     filters, generics, mixins, pagination, status, viewsets
 )
@@ -13,70 +15,73 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
 
 from reviews.models import Category, Genre, Review, Title
-from users.models import YamdbUser
 from api.filters import TitleFilter
 from api.serializers import (
     CategorySerializer,
     CommentSerializer,
     GenreSerializer,
-    TitleSerializer,
+    TitleReadSerializer,
+    TitleWriteSerializer,
     ReviewSerializer,
     TokenObtainSerializer,
     YamdbUserSerializer
 )
 from api.permissions import (
-    IsAdminOrReadOnly, IsAuthorModeratorAdmin, IsOwnerOrAdmin
+    IsAdminOrReadOnly, IsAuthorModeratorAdminOrReadOnly, IsAdmin
 )
 
 
-class CategoryViewSet(
+User = get_user_model()
+
+
+class CategoryGenreBaseViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet
 ):
+    """Базовый вьюсет для категорий и жанров."""
+
+    lookup_field = 'slug'
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ('name',)
+    permission_classes = (IsAdminOrReadOnly,)
+
+
+class CategoryViewSet(CategoryGenreBaseViewSet):
     """Вьюсет для работы с категориями."""
 
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    lookup_field = 'slug'
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ('name',)
-    permission_classes = (IsAdminOrReadOnly, )
 
 
-class GenreViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.DestroyModelMixin,
-    viewsets.GenericViewSet
-):
+class GenreViewSet(CategoryGenreBaseViewSet):
     """Вьюсет для работы с жанрами."""
 
     queryset = Genre.objects.all()
     serializer_class = GenreSerializer
-    lookup_field = 'slug'
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ('name',)
-    permission_classes = (IsAdminOrReadOnly, )
 
 
 class TitleViewSet(viewsets.ModelViewSet):
     """Вьюсет для произведений."""
 
-    serializer_class = TitleSerializer
-    queryset = Title.objects.all()
+    queryset = Title.objects.annotate(rating=Avg('reviews__score'))
     filterset_class = TitleFilter
     filter_backends = (DjangoFilterBackend,)
     permission_classes = (IsAdminOrReadOnly, )
     http_method_names = ('get', 'post', 'patch', 'delete', 'head', 'options')
+
+    def get_serializer_class(self):
+        if self.action in ('list', 'retrieve'):
+            return TitleReadSerializer
+        return TitleWriteSerializer
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
     """Вьюсет для отзывов."""
 
     serializer_class = ReviewSerializer
-    permission_classes = (IsAuthorModeratorAdmin,)
+    permission_classes = (IsAuthorModeratorAdminOrReadOnly,)
     http_method_names = ('get', 'post', 'patch', 'delete', 'head', 'options')
 
     def get_title(self):
@@ -96,12 +101,16 @@ class CommentViewSet(viewsets.ModelViewSet):
     """Вьюсет для комментариев."""
 
     serializer_class = CommentSerializer
-    permission_classes = (IsAuthorModeratorAdmin,)
+    permission_classes = (IsAuthorModeratorAdminOrReadOnly,)
     http_method_names = ('get', 'post', 'patch', 'delete', 'head', 'options')
 
     def get_review(self):
         """Возвращает отзыв по review_id из URL."""
-        return get_object_or_404(Review, id=self.kwargs.get('review_id'))
+        return get_object_or_404(
+            Review,
+            id=self.kwargs.get('review_id'),
+            title_id=self.kwargs.get('title_id')
+        )
 
     def get_queryset(self):
         """Возвращает все комментарии к конкретному отзыву."""
@@ -115,10 +124,10 @@ class CommentViewSet(viewsets.ModelViewSet):
 class YamdbUserViewSet(viewsets.ModelViewSet):
     """Вьюсет для работы с пользователями."""
 
-    queryset = YamdbUser.objects.all()
+    queryset = User.objects.all()
     serializer_class = YamdbUserSerializer
     lookup_field = 'username'
-    permission_classes = [IsOwnerOrAdmin]
+    permission_classes = [IsAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ['username']
     pagination_class = pagination.PageNumberPagination
@@ -184,15 +193,15 @@ class CreateUser(generics.CreateAPIView):
 
         try:
             code = self.generate_confirmation_code()
-            user_by_email = YamdbUser.objects.filter(email=email).first()
+            user_by_email = User.objects.filter(email=email).first()
             if (
                 user_by_email
-                and YamdbUser.objects.filter(username=username).exists()
+                and User.objects.filter(username=username).exists()
             ):
                 user_by_email.confirmation_code = code
                 user_by_email.save()
             else:
-                YamdbUser.objects.create(
+                User.objects.create(
                     email=email,
                     username=username,
                     confirmation_code=code
@@ -232,7 +241,7 @@ class TokenObtainPairView(generics.CreateAPIView):
         username = serializer.validated_data['username']
 
         try:
-            user = YamdbUser.objects.get(username=username)
+            user = User.objects.get(username=username)
             access_token = AccessToken.for_user(user)
 
             return Response({

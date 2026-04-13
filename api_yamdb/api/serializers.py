@@ -1,18 +1,19 @@
 """Сериализаторы для моделей приложения review."""
 import re
 
-from django.db.models import Avg
-
 from django.http import Http404
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from reviews.models import Category, Comment, Genre, Review, Title
-from users.models import YamdbUser
+
+
+User = get_user_model()
 
 
 def validate_username_and_email(username, email):
-    user_by_email = YamdbUser.objects.filter(email=email).first()
-    user_by_username = YamdbUser.objects.filter(username=username).first()
+    user_by_email = User.objects.filter(email=email).first()
+    user_by_username = User.objects.filter(username=username).first()
     if user_by_email and not user_by_username:
         return False
     elif user_by_username and not user_by_email:
@@ -39,35 +40,36 @@ class GenreSerializer(serializers.ModelSerializer):
         fields = ('name', 'slug')
 
 
-class TitleSerializer(serializers.ModelSerializer):
-    """Сериализатор для модели Title"""
+class TitleReadSerializer(serializers.ModelSerializer):
+    """Сериализатор для GET-запросов модели Title."""
 
-    genre = serializers.SlugRelatedField(
-        slug_field='slug',
-        queryset=Genre.objects.all(),
-        many=True,
-    )
-    category = serializers.SlugRelatedField(
-        slug_field='slug',
-        queryset=Category.objects.all(),
-    )
-    rating = serializers.SerializerMethodField()
+    genre = GenreSerializer(many=True)
+    category = CategorySerializer()
+    rating = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Title
         fields = '__all__'
 
-    def get_rating(self, obj):
-        """Возвращает средний рейтинг произведения на основе оценок отзывов."""
-        result = obj.reviews.aggregate(Avg('score'))
-        return result['score__avg']
 
-    def to_representation(self, instance):
-        """При чтении возвращает genre и category как вложенные объекты."""
-        data = super().to_representation(instance)
-        data['genre'] = GenreSerializer(instance.genre.all(), many=True).data
-        data['category'] = CategorySerializer(instance.category).data
-        return data
+class TitleWriteSerializer(serializers.ModelSerializer):
+    """Сериализатор для POST/PATCH-запросов модели Title."""
+
+    genre = serializers.SlugRelatedField(
+        slug_field='slug',
+        queryset=Genre.objects.all(),
+        many=True,
+        allow_null=False,
+        allow_empty=False,
+    )
+    category = serializers.SlugRelatedField(
+        slug_field='slug',
+        queryset=Category.objects.all(),
+    )
+
+    class Meta:
+        model = Title
+        fields = '__all__'
 
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -80,8 +82,7 @@ class ReviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Review
-        fields = '__all__'
-        read_only_fields = ('pub_date', 'title')
+        fields = ('id', 'text', 'author', 'score', 'pub_date')
 
     def validate(self, data):
         """Запрещает повторный отзыв от одного автора на одно произведение."""
@@ -106,8 +107,7 @@ class CommentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Comment
-        fields = '__all__'
-        read_only_fields = ('pub_date', 'review')
+        fields = ('id', 'text', 'author', 'pub_date')
 
 
 class YamdbUserSerializer(serializers.ModelSerializer):
@@ -143,7 +143,7 @@ class YamdbUserSerializer(serializers.ModelSerializer):
         return value
 
     class Meta:
-        model = YamdbUser
+        model = User
         fields = (
             'username',
             'email',
@@ -176,8 +176,8 @@ class TokenObtainSerializer(serializers.Serializer):
             )
 
         try:
-            user = YamdbUser.objects.get(username=username)
-        except YamdbUser.DoesNotExist:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
             raise Http404('Пользователь не найден')
 
         if user.confirmation_code != confirmation_code:
