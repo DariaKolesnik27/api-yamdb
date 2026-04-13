@@ -31,7 +31,6 @@ class CategoryGenreAbstractModel(models.Model):
 class Category(CategoryGenreAbstractModel):
     """Модель для категорий произведений."""
 
-
     class Meta(CategoryGenreAbstractModel.Meta):
         verbose_name = 'Категория'
         verbose_name_plural = 'Категории'
@@ -39,7 +38,6 @@ class Category(CategoryGenreAbstractModel):
 
 class Genre(CategoryGenreAbstractModel):
     """Модель для жанров произведений."""
-
 
     class Meta(CategoryGenreAbstractModel.Meta):
         verbose_name = 'Жанр'

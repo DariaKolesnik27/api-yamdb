@@ -5,8 +5,7 @@ import uuid
 from django.http import Http404
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
-from requests import Response
-from rest_framework import serializers, status
+from rest_framework import serializers
 
 from reviews.models import Category, Comment, Genre, Review, Title
 
@@ -125,7 +124,6 @@ class YamdbUserSerializer(serializers.ModelSerializer):
             'last_name',
             'bio',
             'role',
-            # 'confirmation_code'
         )
 
 
@@ -141,7 +139,6 @@ class MeUserSerializer(serializers.ModelSerializer):
             'last_name',
             'bio',
             'role',
-            # 'confirmation_code'
         )
         read_only_fields = ('role',)
 
