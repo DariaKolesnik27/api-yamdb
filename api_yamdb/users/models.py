@@ -1,36 +1,45 @@
+import re
+
 from django.contrib.auth.models import AbstractUser
-from django.core.validators import RegexValidator
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 MAX_NAMES_LENGTH = 150
 EMAIL_LENGTH = 254
 CODE_LENGTH = 12
-ROLE_USER = 'user'
-ROLE_MODERATOR = 'moderator'
-ROLE_ADMIN = 'admin'
 
-ROLES = [
-    (ROLE_USER, 'Пользователь'),
-    (ROLE_MODERATOR, 'Модератор'),
-    (ROLE_ADMIN, 'Администратор'),
-]
+
+def valid_username(username):
+    pattern = r'[\w.@+-]'
+    invalid_chars = re.sub(pattern, '', username)
+    if username.lower() == 'me':
+        raise ValidationError('Нельзя использовать "me" как имя пользователя.')
+    elif invalid_chars:
+        unique_chars = ' '.join(set(invalid_chars))
+        raise ValidationError(
+            'Использованы недопустимые символы в имени пользователя: '
+            f'{unique_chars}. Поле может содержать только буквы, цифры и '
+            'символы @/./+/-/_.'
+        )
 
 
 class YamdbUser(AbstractUser):
     """Модель пользователя."""
 
+    class Roles(models.TextChoices):
+        ROLE_USER = 'user', _('user')
+        ROLE_MODERATOR = 'moderator', _('moderator')
+        ROLE_ADMIN = 'admin', _('admin')
+
     username = models.CharField(
         max_length=MAX_NAMES_LENGTH,
         unique=True,
-        validators=[RegexValidator(
-            regex=r'^[\w.@+-]+\Z',
-            message=(
-                'Поле обязательно для заполнения. '
-                'Может содержать только буквы, цифры и символы @/./+/-/_.'
-            ),
-            code='invalid_username'
-        )],
+        validators=[
+            UnicodeUsernameValidator(), valid_username
+        ],
         verbose_name='Имя пользователя'
     )
     email = models.EmailField(
@@ -41,21 +50,23 @@ class YamdbUser(AbstractUser):
     first_name = models.CharField(
         max_length=MAX_NAMES_LENGTH,
         blank=True,
-        null=True,
         verbose_name='Имя'
     )
     last_name = models.CharField(
         max_length=MAX_NAMES_LENGTH,
         blank=True,
-        null=True,
         verbose_name='Фамилия'
     )
     bio = models.TextField(
         blank=True,
-        null=True,
         verbose_name='Биография пользователя'
     )
-    role = models.CharField(max_length=20, choices=ROLES, default=ROLE_USER)
+    role = models.CharField(
+        max_length=max(map(len, [role[1] for role in Roles.choices])),
+        choices=Roles.choices,
+        default=Roles.ROLE_USER,
+        blank=True,
+    )
     confirmation_code = models.CharField(
         max_length=CODE_LENGTH,
         blank=True,
@@ -65,10 +76,19 @@ class YamdbUser(AbstractUser):
     class Meta:
         verbose_name = 'Пользователь'
         verbose_name_plural = 'Пользователи'
+        ordering = ('username',)
 
     @property
     def is_admin(self):
-        return self.is_superuser or self.role == ROLE_ADMIN
+        return (
+            self.is_superuser
+            or self.role == self.Roles.ROLE_ADMIN.value
+            or self.is_staff
+        )
+
+    @property
+    def is_moderator(self):
+        return self.role == self.Roles.ROLE_MODERATOR.value
 
     def __str__(self):
         return self.username

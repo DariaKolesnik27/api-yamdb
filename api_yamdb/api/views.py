@@ -1,16 +1,14 @@
 """Представления для API приложения reviews"""
-import uuid
 
-from django.core.mail import send_mail
 from django.db.models import Avg
-from django.forms import ValidationError
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from rest_framework import (
     filters, generics, mixins, pagination, status, viewsets
 )
-from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
 
@@ -19,7 +17,9 @@ from api.filters import TitleFilter
 from api.serializers import (
     CategorySerializer,
     CommentSerializer,
+    CreateUserSerializer,
     GenreSerializer,
+    MeUserSerializer,
     TitleReadSerializer,
     TitleWriteSerializer,
     ReviewSerializer,
@@ -131,40 +131,27 @@ class YamdbUserViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ['username']
     pagination_class = pagination.PageNumberPagination
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
-    def get_object(self):
-        username = self.kwargs['username']
-        if username == 'me':
-            return self.request.user
-
-        user = get_object_or_404(
-            self.get_queryset(),
-            username=username
-        )
-        self.check_object_permissions(self.request, user)
-        return user
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        username = self.kwargs['username']
-        if username == 'me':
-            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
-        self.perform_destroy(instance)
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def update(self, request, *args, **kwargs):
-        if request.method == 'PUT':
-            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
-        elif (
-            self.kwargs['username'] == 'me'
-            and 'role' in request.data
-            and not request.user.is_staff
-        ):
-            return Response(
-                'Изменение роли запрещено для данного пользователя.',
-                status=status.HTTP_403_FORBIDDEN
+    @action(
+        detail=False,
+        methods=['get', 'patch'],
+        permission_classes=[IsAuthenticated],
+        serializer_class=MeUserSerializer
+    )
+    def me(self, request):
+        if request.method == 'GET':
+            serializer = MeUserSerializer(instance=request.user)
+            return Response(serializer.data)
+        else:
+            serializer = MeUserSerializer(
+                instance=request.user,
+                data=request.data,
+                partial=True
             )
-        return super().update(request, *args, **kwargs)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
 
 
 class CreateUser(generics.CreateAPIView):
@@ -174,12 +161,8 @@ class CreateUser(generics.CreateAPIView):
     Отправляет письмо с кодом подтверждения (confirmation_code) на адрес email.
     """
 
-    serializer_class = YamdbUserSerializer
+    serializer_class = CreateUserSerializer
     permission_classes = [AllowAny]
-
-    def generate_confirmation_code(self):
-        """Генерирует UUID и обрезает до нужной длины."""
-        return str(uuid.uuid4()).replace('-', '')[:12]
 
     def create(self, request, *args, **kwargs):
         """
@@ -188,42 +171,12 @@ class CreateUser(generics.CreateAPIView):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        username = serializer.validated_data['username']
-        email = serializer.validated_data['email']
+        user = serializer.save()
 
-        try:
-            code = self.generate_confirmation_code()
-            user_by_email = User.objects.filter(email=email).first()
-            if (
-                user_by_email
-                and User.objects.filter(username=username).exists()
-            ):
-                user_by_email.confirmation_code = code
-                user_by_email.save()
-            else:
-                User.objects.create(
-                    email=email,
-                    username=username,
-                    confirmation_code=code
-                )
-            send_mail(
-                subject='Подтверждение регистрации на YaMDB',
-                message=(
-                    'Для завершения регистрации на сайте используйте '
-                    'код подтверждения: '
-                    f'{code}'
-                ),
-                from_email='from@yamdb.com',
-                recipient_list=[email],
-            )
-            return Response(
-                {'email': email, 'username': username},
-                status=status.HTTP_200_OK
-            )
-        except Exception:
-            raise ValidationError(
-                {'Не удалось отправить письмо с кодом подтверждения.'}
-            )
+        return Response(
+            {'email': user.email, 'username': user.username},
+            status=status.HTTP_200_OK
+        )
 
 
 class TokenObtainPairView(generics.CreateAPIView):

@@ -1,9 +1,12 @@
 """Сериализаторы для моделей приложения review."""
 import re
+import uuid
 
 from django.http import Http404
 from django.contrib.auth import get_user_model
-from rest_framework import serializers
+from django.core.mail import send_mail
+from requests import Response
+from rest_framework import serializers, status
 
 from reviews.models import Category, Comment, Genre, Review, Title
 
@@ -113,6 +116,38 @@ class CommentSerializer(serializers.ModelSerializer):
 class YamdbUserSerializer(serializers.ModelSerializer):
     """Сериализатор для работы с пользователями."""
 
+    class Meta:
+        model = User
+        fields = (
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'bio',
+            'role',
+            # 'confirmation_code'
+        )
+
+
+class MeUserSerializer(serializers.ModelSerializer):
+    """Сериализатор для работы с пользователями."""
+
+    class Meta:
+        model = User
+        fields = (
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'bio',
+            'role',
+            # 'confirmation_code'
+        )
+        read_only_fields = ('role',)
+
+
+class CreateUserSerializer(serializers.Serializer):
+
     email = serializers.EmailField(max_length=254, required=True)
     username = serializers.CharField(max_length=150, required=True)
     role = serializers.ChoiceField(
@@ -124,41 +159,73 @@ class YamdbUserSerializer(serializers.ModelSerializer):
     def validate(self, data):
         username = data.get('username')
         email = data.get('email')
-        if not validate_username_and_email(username, email):
+        user_by_email = User.objects.filter(email=email).first()
+        user_by_username = User.objects.filter(username=username).first()
+        if user_by_email and not user_by_username:
             raise serializers.ValidationError(
-                'Имя пользователя или пароль уже используются.'
+                'Пользователь с такой почтой уже существует.'
             )
+        elif user_by_username and not user_by_email:
+            raise serializers.ValidationError(
+                'Пользователь с таким username уже существует.'
+            )
+        elif user_by_email and user_by_username:
+            if user_by_email != user_by_username:
+                raise serializers.ValidationError(
+                    'Почта и username принадлежат разным пользователям.'
+                )
         return data
 
     def validate_username(self, value):
-        if not re.match(r'^[\w.@+-]+$', value):
-            raise serializers.ValidationError(
-                'Username должен содержать только буквы, '
-                'цифры и символы @/./+/-/_.'
-            )
+        pattern = r'[\w.@+-]'
+        invalid_chars = re.sub(pattern, '', value)
         if value.lower() == 'me':
             raise serializers.ValidationError(
-                'Использовать имя "me" в качестве username запрещено.'
+                'Нельзя использовать "me" как имя пользователя.'
+            )
+        elif invalid_chars:
+            unique_chars = ' '.join(set(invalid_chars))
+            raise serializers.ValidationError(
+                'Использованы недопустимые символы в имени пользователя: '
+                f'{unique_chars}. Поле может содержать только буквы, цифры и '
+                'символы @/./+/-/_.'
             )
         return value
 
-    class Meta:
-        model = User
-        fields = (
-            'username',
-            'email',
-            'first_name',
-            'last_name',
-            'bio',
-            'role',
-            'confirmation_code'
-        )
-        extra_kwargs = {
-            'confirmation_code': {'required': False, 'write_only': True},
-            'first_name': {'required': False, 'allow_blank': True},
-            'last_name': {'required': False, 'allow_blank': True},
-            'bio': {'required': False, 'allow_blank': True}
-        }
+    def generate_confirmation_code(self):
+        """Генерирует UUID и обрезает до нужной длины."""
+        return str(uuid.uuid4()).replace('-', '')[:12]
+
+    def create(self, validated_data):
+        """
+        Создает пользователя, если его нет в базе данных.
+        Отправляет письмо с кодом подтверждения.
+        """
+        username = validated_data['username']
+        email = validated_data['email']
+
+        try:
+            code = self.generate_confirmation_code()
+            user, created = User.objects.get_or_create(
+                username=username, email=email
+            )
+            user.confirmation_code = code
+            user.save()
+            send_mail(
+                subject='Подтверждение регистрации на YaMDB',
+                message=(
+                    'Для завершения регистрации на сайте используйте '
+                    'код подтверждения: '
+                    f'{code}'
+                ),
+                from_email='from@yamdb.com',
+                recipient_list=[email],
+            )
+            return user
+        except Exception:
+            raise serializers.ValidationError(
+                {'Не удалось отправить письмо с кодом подтверждения.'}
+            )
 
 
 class TokenObtainSerializer(serializers.Serializer):
