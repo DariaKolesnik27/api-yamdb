@@ -1,82 +1,87 @@
 """Представления для API приложения reviews"""
-import uuid
 
-from django.core.mail import send_mail
-from django.forms import ValidationError
+from django.db.models import Avg
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+from django.contrib.auth import get_user_model
 from rest_framework import (
     filters, generics, mixins, pagination, status, viewsets
 )
-from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import AccessToken
 
 from reviews.models import Category, Genre, Review, Title
-from users.models import YamdbUser
 from api.filters import TitleFilter
 from api.serializers import (
     CategorySerializer,
     CommentSerializer,
+    CreateUserSerializer,
     GenreSerializer,
-    TitleSerializer,
+    MeUserSerializer,
+    TitleReadSerializer,
+    TitleWriteSerializer,
     ReviewSerializer,
     TokenObtainSerializer,
     YamdbUserSerializer
 )
 from api.permissions import (
-    IsAdminOrReadOnly, IsAuthorModeratorAdmin, IsOwnerOrAdmin
+    IsAdminOrReadOnly, IsAuthorModeratorAdminOrReadOnly, IsAdmin
 )
 
 
-class CategoryViewSet(
+User = get_user_model()
+
+
+class CategoryGenreBaseViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet
 ):
+    """Базовый вьюсет для категорий и жанров."""
+
+    lookup_field = 'slug'
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ('name',)
+    permission_classes = (IsAdminOrReadOnly,)
+
+
+class CategoryViewSet(CategoryGenreBaseViewSet):
     """Вьюсет для работы с категориями."""
 
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    lookup_field = 'slug'
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ('name',)
-    permission_classes = (IsAdminOrReadOnly, )
 
 
-class GenreViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.DestroyModelMixin,
-    viewsets.GenericViewSet
-):
+class GenreViewSet(CategoryGenreBaseViewSet):
     """Вьюсет для работы с жанрами."""
 
     queryset = Genre.objects.all()
     serializer_class = GenreSerializer
-    lookup_field = 'slug'
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ('name',)
-    permission_classes = (IsAdminOrReadOnly, )
 
 
 class TitleViewSet(viewsets.ModelViewSet):
     """Вьюсет для произведений."""
 
-    serializer_class = TitleSerializer
-    queryset = Title.objects.all()
+    queryset = Title.objects.annotate(rating=Avg('reviews__score'))
     filterset_class = TitleFilter
     filter_backends = (DjangoFilterBackend,)
     permission_classes = (IsAdminOrReadOnly, )
     http_method_names = ('get', 'post', 'patch', 'delete', 'head', 'options')
+
+    def get_serializer_class(self):
+        if self.action in ('list', 'retrieve'):
+            return TitleReadSerializer
+        return TitleWriteSerializer
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
     """Вьюсет для отзывов."""
 
     serializer_class = ReviewSerializer
-    permission_classes = (IsAuthorModeratorAdmin,)
+    permission_classes = (IsAuthorModeratorAdminOrReadOnly,)
     http_method_names = ('get', 'post', 'patch', 'delete', 'head', 'options')
 
     def get_title(self):
@@ -96,12 +101,16 @@ class CommentViewSet(viewsets.ModelViewSet):
     """Вьюсет для комментариев."""
 
     serializer_class = CommentSerializer
-    permission_classes = (IsAuthorModeratorAdmin,)
+    permission_classes = (IsAuthorModeratorAdminOrReadOnly,)
     http_method_names = ('get', 'post', 'patch', 'delete', 'head', 'options')
 
     def get_review(self):
         """Возвращает отзыв по review_id из URL."""
-        return get_object_or_404(Review, id=self.kwargs.get('review_id'))
+        return get_object_or_404(
+            Review,
+            id=self.kwargs.get('review_id'),
+            title_id=self.kwargs.get('title_id')
+        )
 
     def get_queryset(self):
         """Возвращает все комментарии к конкретному отзыву."""
@@ -115,47 +124,34 @@ class CommentViewSet(viewsets.ModelViewSet):
 class YamdbUserViewSet(viewsets.ModelViewSet):
     """Вьюсет для работы с пользователями."""
 
-    queryset = YamdbUser.objects.all()
+    queryset = User.objects.all()
     serializer_class = YamdbUserSerializer
     lookup_field = 'username'
-    permission_classes = [IsOwnerOrAdmin]
+    permission_classes = [IsAdmin]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ['username']
     pagination_class = pagination.PageNumberPagination
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
-    def get_object(self):
-        username = self.kwargs['username']
-        if username == 'me':
-            return self.request.user
-
-        user = get_object_or_404(
-            self.get_queryset(),
-            username=username
-        )
-        self.check_object_permissions(self.request, user)
-        return user
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        username = self.kwargs['username']
-        if username == 'me':
-            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
-        self.perform_destroy(instance)
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def update(self, request, *args, **kwargs):
-        if request.method == 'PUT':
-            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
-        elif (
-            self.kwargs['username'] == 'me'
-            and 'role' in request.data
-            and not request.user.is_staff
-        ):
-            return Response(
-                'Изменение роли запрещено для данного пользователя.',
-                status=status.HTTP_403_FORBIDDEN
+    @action(
+        detail=False,
+        methods=['get', 'patch'],
+        permission_classes=[IsAuthenticated],
+        serializer_class=MeUserSerializer
+    )
+    def me(self, request):
+        if request.method == 'GET':
+            serializer = MeUserSerializer(instance=request.user)
+            return Response(serializer.data)
+        else:
+            serializer = MeUserSerializer(
+                instance=request.user,
+                data=request.data,
+                partial=True
             )
-        return super().update(request, *args, **kwargs)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
 
 
 class CreateUser(generics.CreateAPIView):
@@ -165,12 +161,8 @@ class CreateUser(generics.CreateAPIView):
     Отправляет письмо с кодом подтверждения (confirmation_code) на адрес email.
     """
 
-    serializer_class = YamdbUserSerializer
+    serializer_class = CreateUserSerializer
     permission_classes = [AllowAny]
-
-    def generate_confirmation_code(self):
-        """Генерирует UUID и обрезает до нужной длины."""
-        return str(uuid.uuid4()).replace('-', '')[:12]
 
     def create(self, request, *args, **kwargs):
         """
@@ -179,42 +171,12 @@ class CreateUser(generics.CreateAPIView):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        username = serializer.validated_data['username']
-        email = serializer.validated_data['email']
+        user = serializer.save()
 
-        try:
-            code = self.generate_confirmation_code()
-            user_by_email = YamdbUser.objects.filter(email=email).first()
-            if (
-                user_by_email
-                and YamdbUser.objects.filter(username=username).exists()
-            ):
-                user_by_email.confirmation_code = code
-                user_by_email.save()
-            else:
-                YamdbUser.objects.create(
-                    email=email,
-                    username=username,
-                    confirmation_code=code
-                )
-            send_mail(
-                subject='Подтверждение регистрации на YaMDB',
-                message=(
-                    'Для завершения регистрации на сайте используйте '
-                    'код подтверждения: '
-                    f'{code}'
-                ),
-                from_email='from@yamdb.com',
-                recipient_list=[email],
-            )
-            return Response(
-                {'email': email, 'username': username},
-                status=status.HTTP_200_OK
-            )
-        except Exception:
-            raise ValidationError(
-                {'Не удалось отправить письмо с кодом подтверждения.'}
-            )
+        return Response(
+            {'email': user.email, 'username': user.username},
+            status=status.HTTP_200_OK
+        )
 
 
 class TokenObtainPairView(generics.CreateAPIView):
@@ -232,7 +194,7 @@ class TokenObtainPairView(generics.CreateAPIView):
         username = serializer.validated_data['username']
 
         try:
-            user = YamdbUser.objects.get(username=username)
+            user = User.objects.get(username=username)
             access_token = AccessToken.for_user(user)
 
             return Response({

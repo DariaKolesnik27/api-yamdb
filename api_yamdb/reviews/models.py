@@ -2,61 +2,55 @@
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 
+from reviews.constants import STR_LIMIT, MAX_NAME_LENGTH, MAX_SLUG_LENGTH
 from reviews.validators import validate_year
 
 
-STR_LIMIT = 20
+class CategoryGenreAbstractModel(models.Model):
+    """Абстрактная модель для категорий и жанров."""
+
+    name = models.CharField(
+        unique=True,
+        max_length=MAX_NAME_LENGTH,
+        verbose_name='Название',
+    )
+    slug = models.SlugField(
+        max_length=MAX_SLUG_LENGTH,
+        unique=True,
+        verbose_name='Слаг',
+    )
+
+    class Meta:
+        abstract = True
+        ordering = ('name',)
+
+    def __str__(self):
+        return self.name[:STR_LIMIT]
 
 
-class Category(models.Model):
+class Category(CategoryGenreAbstractModel):
     """Модель для категорий произведений."""
 
-    name = models.CharField(
-        max_length=256,
-        verbose_name='Название категории',
-    )
-    slug = models.SlugField(
-        max_length=50,
-        unique=True,
-        verbose_name='Слаг категории',
-    )
 
-    class Meta:
+    class Meta(CategoryGenreAbstractModel.Meta):
         verbose_name = 'Категория'
         verbose_name_plural = 'Категории'
-        ordering = ('name',)
-
-    def __str__(self):
-        return self.name[:STR_LIMIT]
 
 
-class Genre(models.Model):
+class Genre(CategoryGenreAbstractModel):
     """Модель для жанров произведений."""
 
-    name = models.CharField(
-        max_length=256,
-        verbose_name='Название жанра',
-    )
-    slug = models.SlugField(
-        max_length=50,
-        unique=True,
-        verbose_name='Слаг жанра',
-    )
 
-    class Meta:
+    class Meta(CategoryGenreAbstractModel.Meta):
         verbose_name = 'Жанр'
         verbose_name_plural = 'Жанры'
-        ordering = ('name',)
-
-    def __str__(self):
-        return self.name[:STR_LIMIT]
 
 
 class Title(models.Model):
     """Модель для произведений."""
 
     name = models.CharField(
-        max_length=256,
+        max_length=MAX_NAME_LENGTH,
         verbose_name='Название',
     )
     year = models.IntegerField(
@@ -65,7 +59,6 @@ class Title(models.Model):
     )
     description = models.TextField(
         blank=True,
-        null=True,
         verbose_name='Описание',
     )
     genre = models.ManyToManyField(
@@ -84,7 +77,7 @@ class Title(models.Model):
     class Meta:
         verbose_name = 'Произведение'
         verbose_name_plural = 'Произведения'
-        ordering = ('year',)
+        ordering = ('year', 'name')
 
     def __str__(self):
         return self.name[:STR_LIMIT]
