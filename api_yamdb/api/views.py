@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from rest_framework import (
-    filters, generics, mixins, pagination, status, viewsets
+    filters, generics, pagination, status, viewsets
 )
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -26,26 +26,13 @@ from api.serializers import (
     TokenObtainSerializer,
     YamdbUserSerializer
 )
+from api.mixins import CategoryGenreBaseViewSet
 from api.permissions import (
     IsAdminOrReadOnly, IsAuthorModeratorAdminOrReadOnly, IsAdmin
 )
 
 
 User = get_user_model()
-
-
-class CategoryGenreBaseViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.DestroyModelMixin,
-    viewsets.GenericViewSet
-):
-    """Базовый вьюсет для категорий и жанров."""
-
-    lookup_field = 'slug'
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ('name',)
-    permission_classes = (IsAdminOrReadOnly,)
 
 
 class CategoryViewSet(CategoryGenreBaseViewSet):
