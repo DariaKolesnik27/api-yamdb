@@ -2,7 +2,9 @@
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 
-from reviews.constants import STR_LIMIT, MAX_NAME_LENGTH, MAX_SLUG_LENGTH
+from reviews.constants import (
+    STR_LIMIT, MAX_NAME_LENGTH, MAX_SLUG_LENGTH, MIN_SCORE, MAX_SCORE
+)
 from reviews.validators import validate_year
 
 
@@ -51,7 +53,7 @@ class Title(models.Model):
         max_length=MAX_NAME_LENGTH,
         verbose_name='Название',
     )
-    year = models.IntegerField(
+    year = models.SmallIntegerField(
         validators=[validate_year],
         verbose_name='Год выпуска',
     )
@@ -99,7 +101,10 @@ class Review(models.Model):
         verbose_name='Автор отзыва',
     )
     score = models.IntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        validators=[
+            MinValueValidator(MIN_SCORE),
+            MaxValueValidator(MAX_SCORE)
+        ],
         verbose_name='Оценка',
     )
     pub_date = models.DateTimeField(

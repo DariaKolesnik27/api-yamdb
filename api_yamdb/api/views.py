@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
 from rest_framework import (
-    filters, generics, mixins, pagination, status, viewsets
+    filters, generics, pagination, status, viewsets
 )
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -26,26 +26,13 @@ from api.serializers import (
     TokenObtainSerializer,
     YamdbUserSerializer
 )
+from api.mixins import CategoryGenreBaseViewSet
 from api.permissions import (
     IsAdminOrReadOnly, IsAuthorModeratorAdminOrReadOnly, IsAdmin
 )
 
 
 User = get_user_model()
-
-
-class CategoryGenreBaseViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.DestroyModelMixin,
-    viewsets.GenericViewSet
-):
-    """Базовый вьюсет для категорий и жанров."""
-
-    lookup_field = 'slug'
-    filter_backends = (filters.SearchFilter,)
-    search_fields = ('name',)
-    permission_classes = (IsAdminOrReadOnly,)
 
 
 class CategoryViewSet(CategoryGenreBaseViewSet):
@@ -143,15 +130,14 @@ class YamdbUserViewSet(viewsets.ModelViewSet):
         if request.method == 'GET':
             serializer = MeUserSerializer(instance=request.user)
             return Response(serializer.data)
-        else:
-            serializer = MeUserSerializer(
-                instance=request.user,
-                data=request.data,
-                partial=True
-            )
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data)
+        serializer = MeUserSerializer(
+            instance=request.user,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class CreateUser(generics.CreateAPIView):
@@ -171,10 +157,10 @@ class CreateUser(generics.CreateAPIView):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        serializer.save()
 
         return Response(
-            {'email': user.email, 'username': user.username},
+            serializer.data,
             status=status.HTTP_200_OK
         )
 
@@ -193,16 +179,9 @@ class TokenObtainPairView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         username = serializer.validated_data['username']
 
-        try:
-            user = User.objects.get(username=username)
-            access_token = AccessToken.for_user(user)
+        user = User.objects.get(username=username)
+        access_token = AccessToken.for_user(user)
 
-            return Response({
-                'access': str(access_token),
-            })
-
-        except Exception:
-            return Response(
-                {'error': 'Ошибка при получении токена'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        return Response({
+            'access': str(access_token),
+        })

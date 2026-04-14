@@ -1,5 +1,5 @@
 """Сериализаторы для моделей приложения review."""
-import re
+
 import uuid
 
 from django.http import Http404
@@ -8,22 +8,11 @@ from django.core.mail import send_mail
 from rest_framework import serializers
 
 from reviews.models import Category, Comment, Genre, Review, Title
+from users.models import EMAIL_LENGTH, MAX_NAMES_LENGTH
+from users.validators import valid_username
 
 
 User = get_user_model()
-
-
-def validate_username_and_email(username, email):
-    user_by_email = User.objects.filter(email=email).first()
-    user_by_username = User.objects.filter(username=username).first()
-    if user_by_email and not user_by_username:
-        return False
-    elif user_by_username and not user_by_email:
-        return False
-    elif user_by_email and user_by_username:
-        if user_by_email != user_by_username:
-            return False
-    return True
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -72,6 +61,9 @@ class TitleWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Title
         fields = '__all__'
+
+    def to_representation(self, instance):
+        return TitleReadSerializer(instance, context=self.context).data
 
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -127,30 +119,20 @@ class YamdbUserSerializer(serializers.ModelSerializer):
         )
 
 
-class MeUserSerializer(serializers.ModelSerializer):
+class MeUserSerializer(YamdbUserSerializer):
     """Сериализатор для работы с пользователями."""
 
-    class Meta:
-        model = User
-        fields = (
-            'username',
-            'email',
-            'first_name',
-            'last_name',
-            'bio',
-            'role',
-        )
+    class Meta(YamdbUserSerializer.Meta):
         read_only_fields = ('role',)
 
 
 class CreateUserSerializer(serializers.Serializer):
 
-    email = serializers.EmailField(max_length=254, required=True)
-    username = serializers.CharField(max_length=150, required=True)
-    role = serializers.ChoiceField(
-        choices=['user', 'moderator', 'admin'],
-        required=False,
-        default='user'
+    email = serializers.EmailField(max_length=EMAIL_LENGTH, required=True)
+    username = serializers.CharField(
+        max_length=MAX_NAMES_LENGTH,
+        required=True,
+        validators=[valid_username]
     )
 
     def validate(self, data):
@@ -172,22 +154,6 @@ class CreateUserSerializer(serializers.Serializer):
                     'Почта и username принадлежат разным пользователям.'
                 )
         return data
-
-    def validate_username(self, value):
-        pattern = r'[\w.@+-]'
-        invalid_chars = re.sub(pattern, '', value)
-        if value.lower() == 'me':
-            raise serializers.ValidationError(
-                'Нельзя использовать "me" как имя пользователя.'
-            )
-        elif invalid_chars:
-            unique_chars = ' '.join(set(invalid_chars))
-            raise serializers.ValidationError(
-                'Использованы недопустимые символы в имени пользователя: '
-                f'{unique_chars}. Поле может содержать только буквы, цифры и '
-                'символы @/./+/-/_.'
-            )
-        return value
 
     def generate_confirmation_code(self):
         """Генерирует UUID и обрезает до нужной длины."""
