@@ -69,5 +69,6 @@ python manage.py runserver
 Когда вы запустите проект, по адресу  http://127.0.0.1:8000/redoc/ будет доступна документация для API YaMDB в формате Redoc. 
  
 ## Авторы проекта 
-Проект разработан - [DariaKolesnik27](https://github.com/DariaKolesnik27), [petroocho](https://github.com/petroocho)
-
+Проект разработан:
+- [DariaKolesnik27](https://github.com/DariaKolesnik27),
+- [petroocho](https://github.com/petroocho)
