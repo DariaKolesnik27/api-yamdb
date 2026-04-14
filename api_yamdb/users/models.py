@@ -1,28 +1,13 @@
-import re
-
 from django.contrib.auth.models import AbstractUser
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+
+from .validators import valid_username
 
 
 MAX_NAMES_LENGTH = 150
 EMAIL_LENGTH = 254
 CODE_LENGTH = 12
-
-
-def valid_username(username):
-    pattern = r'^[\w.@+-]+\Z'
-    invalid_chars = re.sub(pattern, '', username)
-    if username.lower() == 'me':
-        raise ValidationError('Нельзя использовать "me" как имя пользователя.')
-    elif invalid_chars:
-        unique_chars = ' '.join(set(invalid_chars))
-        raise ValidationError(
-            'Использованы недопустимые символы в имени пользователя: '
-            f'{unique_chars}. Поле может содержать только буквы, цифры и '
-            'символы @/./+/-/_.'
-        )
 
 
 class YamdbUser(AbstractUser):

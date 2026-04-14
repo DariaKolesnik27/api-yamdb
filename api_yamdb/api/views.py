@@ -130,15 +130,14 @@ class YamdbUserViewSet(viewsets.ModelViewSet):
         if request.method == 'GET':
             serializer = MeUserSerializer(instance=request.user)
             return Response(serializer.data)
-        else:
-            serializer = MeUserSerializer(
-                instance=request.user,
-                data=request.data,
-                partial=True
-            )
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data)
+        serializer = MeUserSerializer(
+            instance=request.user,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class CreateUser(generics.CreateAPIView):
@@ -158,10 +157,10 @@ class CreateUser(generics.CreateAPIView):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        serializer.save()
 
         return Response(
-            {'email': user.email, 'username': user.username},
+            serializer.data,
             status=status.HTTP_200_OK
         )
 
@@ -180,16 +179,9 @@ class TokenObtainPairView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         username = serializer.validated_data['username']
 
-        try:
-            user = User.objects.get(username=username)
-            access_token = AccessToken.for_user(user)
+        user = User.objects.get(username=username)
+        access_token = AccessToken.for_user(user)
 
-            return Response({
-                'access': str(access_token),
-            })
-
-        except Exception:
-            return Response(
-                {'error': 'Ошибка при получении токена'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        return Response({
+            'access': str(access_token),
+        })
